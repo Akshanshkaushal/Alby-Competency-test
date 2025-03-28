@@ -1,279 +1,289 @@
-import { WebLNProvider } from 'webln';
+import { AlbyProvider } from '@getalby/sdk';
 
-// OAuth configuration
-const OAUTH_CONFIG = {
-  clientId: import.meta.env.VITE_ALBY_CLIENT_ID || '',
-  authorizeEndpoint: 'https://getalby.com/oauth',
-  tokenEndpoint: 'https://api.getalby.com/oauth/token',
-  apiEndpoint: 'https://api.getalby.com',
-  redirectUri: window.location.origin + '/callback',
-  scopes: ['account:read', 'balance:read', 'invoices:create', 'invoices:read', 'payments:send']
-};
-
-// Token storage keys
+// Constants for storage keys
 const TOKEN_STORAGE_KEY = 'alby_access_token';
 const REFRESH_TOKEN_STORAGE_KEY = 'alby_refresh_token';
-const CODE_VERIFIER_KEY = 'alby_code_verifier';
 
-export class AlbyOAuthService {
+// Define environment variables with fallbacks
+const ALBY_CLIENT_ID = import.meta.env?.VITE_ALBY_CLIENT_ID || '';
+const ALBY_REDIRECT_URI = import.meta.env?.VITE_ALBY_REDIRECT_URI || 'http://localhost:3000/callback';
+
+class AlbyOAuthService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+  private provider: AlbyProvider | null = null;
 
   constructor() {
-    // Try to load tokens from storage
+    // Load tokens from localStorage if available
     this.accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
     this.refreshToken = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
   }
 
-  /**
-   * Check if we have a valid access token
-   */
-  public isAuthenticated(): boolean {
+  // Check if we have valid tokens
+  isAuthenticated(): boolean {
     return !!this.accessToken;
   }
 
-  /**
-   * Start the OAuth flow
-   */
-  public startOAuthFlow(): void {
-    // Generate PKCE code verifier and challenge
-    const codeVerifier = this.generateRandomString(64);
-    localStorage.setItem(CODE_VERIFIER_KEY, codeVerifier);
-
-    this.generateCodeChallenge(codeVerifier).then(codeChallenge => {
-      // Build the authorization URL
-      const params = new URLSearchParams({
-        client_id: OAUTH_CONFIG.clientId,
-        response_type: 'code',
-        redirect_uri: OAUTH_CONFIG.redirectUri,
-        scope: OAUTH_CONFIG.scopes.join(' '),
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256'
-      });
-
-      // Redirect to Alby's authorization page
-      window.location.href = `${OAUTH_CONFIG.authorizeEndpoint}?${params.toString()}`;
-    });
+  // Start the OAuth flow
+  startOAuthFlow(): void {
+    const authUrl = `https://getalby.com/oauth?client_id=${ALBY_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(ALBY_REDIRECT_URI)}&scope=account:read%20invoices:create%20invoices:read%20payments:send%20balance:read`;
+    window.location.href = authUrl;
   }
 
-  /**
-   * Handle the OAuth callback
-   */
-  public async handleCallback(code: string): Promise<void> {
-    const codeVerifier = localStorage.getItem(CODE_VERIFIER_KEY);
-    if (!codeVerifier) {
-      throw new Error('Code verifier not found');
-    }
-
-    // Exchange the code for tokens
-    const response = await fetch(OAUTH_CONFIG.tokenEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({
-        client_id: OAUTH_CONFIG.clientId,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: OAUTH_CONFIG.redirectUri,
-        code_verifier: codeVerifier
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Token exchange failed: ${error.error_description || error.error || 'Unknown error'}`);
-    }
-
-    const data = await response.json();
-    this.accessToken = data.access_token;
-    this.refreshToken = data.refresh_token;
-
-    // Store tokens
-    localStorage.setItem(TOKEN_STORAGE_KEY, this.accessToken);
-    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, this.refreshToken);
-    localStorage.removeItem(CODE_VERIFIER_KEY);
-  }
-
-  /**
-   * Refresh the access token
-   */
-  public async refreshAccessToken(): Promise<void> {
-    if (!this.refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
-    const response = await fetch(OAUTH_CONFIG.tokenEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({
-        client_id: OAUTH_CONFIG.clientId,
-        grant_type: 'refresh_token',
-        refresh_token: this.refreshToken
-      })
-    });
-
-    if (!response.ok) {
-      // If refresh fails, clear tokens and redirect to login
-      this.logout();
-      throw new Error('Token refresh failed');
-    }
-
-    const data = await response.json();
-    this.accessToken = data.access_token;
-    this.refreshToken = data.refresh_token;
-
-    // Store new tokens
-    localStorage.setItem(TOKEN_STORAGE_KEY, this.accessToken);
-    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, this.refreshToken);
-  }
-
-  /**
-   * Make an authenticated API request
-   */
-  public async apiRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
-    if (!this.accessToken) {
-      throw new Error('Not authenticated');
-    }
-
-    const headers = {
-      ...options.headers,
-      'Authorization': `Bearer ${this.accessToken}`,
-      'Content-Type': 'application/json'
-    };
-
+  // Handle the OAuth callback
+  async handleCallback(code: string): Promise<boolean> {
     try {
-      const response = await fetch(`${OAUTH_CONFIG.apiEndpoint}${endpoint}`, {
-        ...options,
-        headers
+      const response = await fetch('https://api.getalby.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code,
+          client_id: ALBY_CLIENT_ID,
+          redirect_uri: ALBY_REDIRECT_URI,
+        }),
       });
-
-      if (response.status === 401) {
-        // Token expired, try to refresh
-        await this.refreshAccessToken();
-        // Retry the request with the new token
-        return this.apiRequest(endpoint, options);
-      }
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'API request failed');
+        throw new Error('Failed to exchange code for token');
       }
 
-      return await response.json();
+      const data = await response.json();
+      this.accessToken = data.access_token;
+      this.refreshToken = data.refresh_token;
+
+      // Store tokens in localStorage
+      if (this.accessToken) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, this.accessToken);
+      }
+      if (this.refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, this.refreshToken);
+      }
+
+      return true;
     } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
+      console.error('OAuth token exchange error:', error);
+      return false;
     }
   }
 
-  /**
-   * Logout - clear tokens
-   */
-  public logout(): void {
+  // Refresh the access token
+  async refreshAccessToken(): Promise<boolean> {
+    if (!this.refreshToken) {
+      return false;
+    }
+
+    try {
+      const response = await fetch('https://api.getalby.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          grant_type: 'refresh_token',
+          refresh_token: this.refreshToken,
+          client_id: ALBY_CLIENT_ID,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to refresh token');
+      }
+
+      const data = await response.json();
+      this.accessToken = data.access_token;
+      this.refreshToken = data.refresh_token;
+
+      // Store tokens in localStorage
+      if (this.accessToken) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, this.accessToken);
+      }
+      if (this.refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, this.refreshToken);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('OAuth token refresh error:', error);
+      this.logout();
+      return false;
+    }
+  }
+
+  // Logout and clear tokens
+  logout(): void {
     this.accessToken = null;
     this.refreshToken = null;
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
   }
 
-  /**
-   * Create a WebLN provider that uses Alby's API
-   */
-  public createWebLNProvider(): WebLNProvider {
+  // Create a WebLN provider using Alby
+  createWebLNProvider(): any {
+    if (!this.accessToken) {
+      throw new Error('Not authenticated with Alby');
+    }
+
+    // Create a WebLN-compatible provider that uses Alby's API
     return {
       enable: async () => {
-        if (!this.isAuthenticated()) {
-          this.startOAuthFlow();
-          throw new Error('Authentication required');
+        // Nothing to do, we're already authenticated
+        return;
+      },
+      
+      getInfo: async () => {
+        try {
+          const response = await fetch('https://api.getalby.com/user/me', {
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`
+            }
+          });
+          
+          if (!response.ok) {
+            if (response.status === 401) {
+              // Try to refresh the token
+              const refreshed = await this.refreshAccessToken();
+              if (refreshed) {
+                return this.createWebLNProvider().getInfo();
+              }
+            }
+            throw new Error('Failed to get user info');
+          }
+          
+          const data = await response.json();
+          return {
+            alias: data.name,
+            pubkey: data.lightning_address,
+            methods: ['makeInvoice', 'sendPayment', 'getBalance'],
+            version: 'Alby OAuth'
+          };
+        } catch (error) {
+          console.error('Error getting user info:', error);
+          throw error;
         }
       },
-      getInfo: async () => {
-        const user = await this.apiRequest('/user/me');
-        return {
-          alias: user.name || user.email || 'Alby User',
-          pubkey: user.lightning_address || '',
-          methods: ['makeInvoice', 'sendPayment'],
-          version: '1.0.0'
-        };
+      
+      makeInvoice: async (args: any) => {
+        try {
+          const response = await fetch('https://api.getalby.com/invoices', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              amount: args.amount,
+              description: args.defaultMemo || 'Invoice from Lightning App',
+              expiry: args.expiry || 3600
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to create invoice');
+          }
+          
+          const data = await response.json();
+          return { paymentRequest: data.payment_request };
+        } catch (error) {
+          console.error('Error creating invoice:', error);
+          throw error;
+        }
       },
-      makeInvoice: async (args) => {
-        const invoice = await this.apiRequest('/invoices', {
-          method: 'POST',
-          body: JSON.stringify({
-            amount: args.amount,
-            description: args.defaultMemo || 'Invoice from Lightning App',
-            expiry: args.expiry || 3600
-          })
-        });
-        return {
-          paymentRequest: invoice.payment_request
-        };
+      
+      sendPayment: async (args: any) => {
+        try {
+          const response = await fetch('https://api.getalby.com/payments', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              invoice: typeof args === 'string' ? args : args.paymentRequest
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to send payment');
+          }
+          
+          const data = await response.json();
+          return { 
+            preimage: data.payment_preimage,
+            paymentHash: data.payment_hash
+          };
+        } catch (error) {
+          console.error('Error sending payment:', error);
+          throw error;
+        }
       },
-      sendPayment: async (args) => {
-        const payment = await this.apiRequest('/payments', {
-          method: 'POST',
-          body: JSON.stringify({
-            invoice: args.paymentRequest
-          })
-        });
-        return {
-          preimage: payment.payment_preimage || '',
-          paymentHash: payment.payment_hash || ''
-        };
-      },
+      
       getBalance: async () => {
-        const balance = await this.apiRequest('/balance');
-        return {
-          total: balance.balance || 0,
-          confirmed: balance.balance || 0,
-          unconfirmed: 0
-        };
+        try {
+          const response = await fetch('https://api.getalby.com/balance', {
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to get balance');
+          }
+          
+          const data = await response.json();
+          return {
+            total: data.balance,
+            confirmed: data.balance,
+            unconfirmed: 0
+          };
+        } catch (error) {
+          console.error('Error getting balance:', error);
+          throw error;
+        }
       },
-      keysend: async (args) => {
-        const payment = await this.apiRequest('/payments/keysend', {
-          method: 'POST',
-          body: JSON.stringify({
-            destination: args.destination,
-            amount: args.amount,
-            custom_records: args.customRecords
-          })
-        });
-        return {
-          preimage: payment.payment_preimage || '',
-          paymentHash: payment.payment_hash || ''
-        };
+      
+      keysend: async (args: any) => {
+        try {
+          const response = await fetch('https://api.getalby.com/keysend', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              destination: args.destination,
+              amount: args.amount,
+              custom_records: args.customRecords
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to send keysend payment');
+          }
+          
+          const data = await response.json();
+          return { 
+            preimage: data.payment_preimage,
+            paymentHash: data.payment_hash
+          };
+        } catch (error) {
+          console.error('Error sending keysend payment:', error);
+          throw error;
+        }
       },
+      
       signMessage: async () => {
-        throw new Error('Sign message not supported in Alby OAuth integration');
+        throw new Error('Message signing not supported via Alby OAuth');
       },
+      
       verifyMessage: async () => {
-        throw new Error('Verify message not supported in Alby OAuth integration');
+        throw new Error('Message verification not supported via Alby OAuth');
       }
     };
   }
-
-  // Helper methods for PKCE
-  private generateRandomString(length: number): string {
-    const array = new Uint8Array(length);
-    crypto.getRandomValues(array);
-    return Array.from(array)
-      .map(b => String.fromCharCode(b % 26 + 97))
-      .join('');
-  }
-
-  private async generateCodeChallenge(verifier: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    
-    return btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-  }
 }
 
+// Create a singleton instance
 export const albyOAuthService = new AlbyOAuthService(); 

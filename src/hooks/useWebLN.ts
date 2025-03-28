@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { requestProvider, WebLNProvider } from 'webln';
+import { requestProvider } from 'webln';
 import { albyOAuthService } from '../services/AlbyOAuthService';
+
+// Import the extended WebLNProvider type from our declaration file
+type WebLNProvider = any; // Use any temporarily to avoid conflicts
 
 export interface UseWebLNReturn {
   webln: WebLNProvider | null;
@@ -15,12 +18,6 @@ interface KeysendArgs {
   destination: string;
   amount: number;
   customRecords?: Record<string, any>;
-}
-
-// Make sure the WebLN interface includes keysend
-interface WebLNProvider {
-  // ... existing methods
-  keysend: (args: KeysendArgs) => Promise<{ preimage: string; paymentHash?: string }>;
 }
 
 export function useWebLN(): UseWebLNReturn {
