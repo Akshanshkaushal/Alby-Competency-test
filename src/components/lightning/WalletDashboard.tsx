@@ -6,6 +6,7 @@ import InvoiceGenerator from './InvoiceGenerator';
 import SendPayment from './SendPayment';
 import KeysendPayment from './KeysendPayment';
 import ScrollPayment from './ScrollPayment';
+import LightningAddressPayment from './LightningAddressPayment';
 import { Tab } from '@headlessui/react';
 
 interface WalletInfo {
@@ -79,6 +80,7 @@ const WalletDashboard: React.FC = () => {
     { name: 'Overview', component: <WalletInfoPanel walletInfo={walletInfo} isLoading={isLoading} error={error} onRefresh={fetchWalletInfo} /> },
     { name: 'Receive', component: <InvoiceGenerator /> },
     { name: 'Pay Invoice', component: <SendPayment /> },
+    { name: 'Lightning Address', component: <LightningAddressPayment /> },
     { name: 'Keysend', component: <KeysendPayment /> },
     { name: 'Scroll Pay', component: <ScrollPayment /> }
   ];
