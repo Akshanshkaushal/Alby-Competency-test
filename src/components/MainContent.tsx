@@ -38,16 +38,10 @@ const MainContent: React.FC = () => {
       
       <WebLNNotification />
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div>
-          <WalletDashboard />
-          <SendPayment />
-          <KeysendPayment />
-        </div>
-        <div>
-          <InvoiceGenerator />
-          <ScrollPayment />
-        </div>
+      <div>
+        
+          <WalletDashboard /> 
+           
       </div>
     </div>
   );

@@ -1,86 +1,81 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 interface ExchangeRates {
   [currency: string]: number;
 }
 
-export function useFiatConversion() {
+export const useFiatConversion = () => {
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>({});
-  const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchExchangeRates = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur,gbp,jpy,cad,aud,cny');
-      const data = await response.json();
-      
-      if (!data.bitcoin) {
-        throw new Error('Failed to fetch exchange rates');
-      }
-
-      // Convert BTC rates to satoshi rates (1 BTC = 100,000,000 sats)
-      const satoshiRates: ExchangeRates = {};
-      Object.entries(data.bitcoin).forEach(([currency, rate]) => {
-        satoshiRates[currency.toUpperCase()] = Number(rate) / 100000000;
-      });
-
-      setExchangeRates(satoshiRates);
-    } catch (err) {
-      console.error('Exchange rate error:', err);
-      setError(err instanceof Error ? err : new Error('Failed to fetch exchange rates'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [fiatCurrency, setFiatCurrency] = useState<string>('USD');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const fetchExchangeRates = async () => {
+      try {
+        setLoading(true);
+        // Using CoinGecko API to get BTC price in various currencies
+        const response = await fetch(
+          'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur,gbp,jpy,cad,aud,cny'
+        );
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch exchange rates');
+        }
+        
+        const data = await response.json();
+        
+        // Convert BTC prices to satoshi prices (1 BTC = 100,000,000 sats)
+        const rates: ExchangeRates = {};
+        Object.entries(data.bitcoin).forEach(([currency, rate]) => {
+          rates[currency.toUpperCase()] = Number(rate) / 100000000;
+        });
+        
+        setExchangeRates(rates);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching exchange rates:', err);
+        setError('Failed to load exchange rates');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchExchangeRates();
     
-    // Refresh rates every 15 minutes
-    const intervalId = setInterval(fetchExchangeRates, 15 * 60 * 1000);
+    // Refresh exchange rates every hour
+    const intervalId = setInterval(fetchExchangeRates, 60 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [fetchExchangeRates]);
+  }, []);
 
-  const convertSatsToFiat = useCallback((sats: number): string => {
-    if (!exchangeRates[selectedCurrency]) {
-      return 'N/A';
+  const convertSatsToFiat = (sats: number): number => {
+    if (!exchangeRates[fiatCurrency]) return 0;
+    return sats * exchangeRates[fiatCurrency];
+  };
+
+  const convertFiatToSats = (fiatAmount: number): number => {
+    if (!exchangeRates[fiatCurrency] || exchangeRates[fiatCurrency] === 0) return 0;
+    return Math.round(fiatAmount / exchangeRates[fiatCurrency]);
+  };
+
+  const setPreferredFiatCurrency = (currency: string) => {
+    if (exchangeRates[currency.toUpperCase()]) {
+      setFiatCurrency(currency.toUpperCase());
     }
-    
-    const fiatValue = sats * exchangeRates[selectedCurrency];
-    
-    // Format based on currency
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: selectedCurrency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(fiatValue);
-  }, [exchangeRates, selectedCurrency]);
+  };
 
-  const convertFiatToSats = useCallback((fiat: number): number => {
-    if (!exchangeRates[selectedCurrency]) {
-      return 0;
-    }
-    
-    return Math.round(fiat / exchangeRates[selectedCurrency]);
-  }, [exchangeRates, selectedCurrency]);
-
-  const availableCurrencies = Object.keys(exchangeRates);
+  const getAvailableCurrencies = (): string[] => {
+    return Object.keys(exchangeRates);
+  };
 
   return {
-    exchangeRates,
-    selectedCurrency,
-    setSelectedCurrency,
     convertSatsToFiat,
     convertFiatToSats,
-    availableCurrencies,
-    isLoading,
-    error,
-    refreshRates: fetchExchangeRates
+    fiatCurrency,
+    setPreferredFiatCurrency,
+    getAvailableCurrencies,
+    loading,
+    error
   };
-} 
+}; 

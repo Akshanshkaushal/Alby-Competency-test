@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useWebLNContext } from '../../context/WebLNContext';
 import Button from '../common/Button';
 import Card from '../common/Card';
+import { useFiatConversion } from '../../hooks/useFiatConversion';
+import Input from '../common/Input';
 
 const SendPayment: React.FC = () => {
   const { webln, isEnabled } = useWebLNContext();
@@ -10,6 +12,8 @@ const SendPayment: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
+  const [amount, setAmount] = useState<string>('');
+  const [isLNURL, setIsLNURL] = useState<boolean>(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +49,10 @@ const SendPayment: React.FC = () => {
     }
   };
 
+  const handleSatsChange = (sats: number) => {
+    setAmount(sats.toString());
+  };
+
   return (
     <Card title="Send Payment">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -62,6 +70,20 @@ const SendPayment: React.FC = () => {
             required
           />
         </div>
+
+        {isLNURL && (
+          <Input
+            label="Amount (sats)"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Enter amount in satoshis"
+            required
+            isSatsInput={true}
+            onSatsChange={handleSatsChange}
+            showFiatConversion={true}
+          />
+        )}
 
         <Button
           type="submit"

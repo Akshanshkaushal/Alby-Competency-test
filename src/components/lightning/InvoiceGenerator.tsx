@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useWebLN } from '../../hooks/useWebLN';
+import { useFiatConversion } from '../../hooks/useFiatConversion';
 import Card from '../common/Card';
 import Button from '../common/Button';
 import Input from '../common/Input';
@@ -7,7 +8,8 @@ import QRCode from '../common/QRCode';
 
 const InvoiceGenerator: React.FC = () => {
   const { webln, isEnabled, enable } = useWebLN();
-  const [amount, setAmount] = useState('');
+  const { convertSatsToFiat, convertFiatToSats, fiatCurrency } = useFiatConversion();
+  const [amount, setAmount] = useState<string>('');
   const [memo, setMemo] = useState('');
   const [expiry, setExpiry] = useState('3600'); // Default: 1 hour
   const [invoice, setInvoice] = useState('');
@@ -16,6 +18,10 @@ const InvoiceGenerator: React.FC = () => {
   const [copySuccess, setCopySuccess] = useState(false);
   
   const invoiceRef = useRef<HTMLInputElement>(null);
+
+  const handleSatsChange = (sats: number) => {
+    setAmount(sats.toString());
+  };
 
   const generateInvoice = async () => {
     if (!webln || !isEnabled) {
@@ -75,6 +81,9 @@ const InvoiceGenerator: React.FC = () => {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             fullWidth
+            isSatsInput={true}
+            onSatsChange={handleSatsChange}
+            showFiatConversion={true}
           />
           
           <Input

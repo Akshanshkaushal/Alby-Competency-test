@@ -11,6 +11,18 @@ export interface UseWebLNReturn {
   isAlbyFallback: boolean;
 }
 
+interface KeysendArgs {
+  destination: string;
+  amount: number;
+  customRecords?: Record<string, any>;
+}
+
+// Make sure the WebLN interface includes keysend
+interface WebLNProvider {
+  // ... existing methods
+  keysend: (args: KeysendArgs) => Promise<{ preimage: string; paymentHash?: string }>;
+}
+
 export function useWebLN(): UseWebLNReturn {
   const [webln, setWebln] = useState<WebLNProvider | null>(null);
   const [isEnabled, setIsEnabled] = useState<boolean>(false);

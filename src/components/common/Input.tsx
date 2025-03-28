@@ -1,4 +1,5 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useState } from 'react';
+import { useFiatConversion } from '../../hooks/useFiatConversion';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -7,6 +8,11 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   fullWidth?: boolean;
+  isSatsInput?: boolean;
+  onSatsChange?: (sats: number) => void;
+  showFiatConversion?: boolean;
+  containerClassName?: string;
+  labelClassName?: string;
 }
 
 const Input = forwardRef<HTMLInputElement, InputProps>(({
@@ -17,13 +23,68 @@ const Input = forwardRef<HTMLInputElement, InputProps>(({
   rightIcon,
   fullWidth = false,
   className = '',
+  containerClassName = '',
+  labelClassName = '',
+  isSatsInput = false,
+  onSatsChange,
+  showFiatConversion = false,
   ...props
 }, ref) => {
+  const [displayMode, setDisplayMode] = useState<'sats' | 'fiat'>('sats');
+  const { convertSatsToFiat, convertFiatToSats, fiatCurrency } = useFiatConversion();
+
+  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    
+    if (isSatsInput && onSatsChange) {
+      if (displayMode === 'sats') {
+        const satsValue = parseFloat(value) || 0;
+        onSatsChange(satsValue);
+      } else {
+        const fiatValue = parseFloat(value) || 0;
+        const satsValue = convertFiatToSats(fiatValue);
+        onSatsChange(satsValue);
+      }
+    }
+    
+    if (props.onChange) {
+      props.onChange(e);
+    }
+  };
+  
+  const toggleDisplayMode = () => {
+    if (isSatsInput && showFiatConversion) {
+      setDisplayMode(displayMode === 'sats' ? 'fiat' : 'sats');
+    }
+  };
+  
+  const getDisplayValue = () => {
+    if (!isSatsInput || !showFiatConversion) return props.value;
+    
+    const numericValue = typeof props.value === 'string' ? parseFloat(props.value) || 0 : 0;
+    
+    if (displayMode === 'fiat') {
+      const fiatValue = convertSatsToFiat(numericValue);
+      return fiatValue.toFixed(2);
+    }
+    
+    return props.value;
+  };
+
   return (
-    <div className={`${fullWidth ? 'w-full' : ''} ${className}`}>
+    <div className={`${fullWidth ? 'w-full' : ''} ${containerClassName}`}>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label className={`block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 ${labelClassName}`}>
           {label}
+          {isSatsInput && showFiatConversion && (
+            <button 
+              type="button"
+              onClick={toggleDisplayMode}
+              className="ml-2 text-xs text-blue-500 hover:text-blue-700"
+            >
+              {displayMode === 'sats' ? `Show in ${fiatCurrency}` : 'Show in sats'}
+            </button>
+          )}
         </label>
       )}
       <div className="relative">
@@ -44,6 +105,8 @@ const Input = forwardRef<HTMLInputElement, InputProps>(({
             ${fullWidth ? 'w-full' : ''}
           `}
           {...props}
+          value={getDisplayValue()}
+          onChange={handleValueChange}
         />
         {rightIcon && (
           <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">

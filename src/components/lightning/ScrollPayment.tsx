@@ -3,6 +3,7 @@ import { useWebLN } from '../../hooks/useWebLN';
 import Card from '../common/Card';
 import Button from '../common/Button';
 import Input from '../common/Input';
+import { useFiatConversion } from '../../hooks/useFiatConversion';
 
 interface ScrollPaymentConfig {
   enabled: boolean;
@@ -29,6 +30,9 @@ const ScrollPayment: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   
   const scrollRef = useRef<number>(0);
+  const [amount, setAmount] = useState<string>('');
+  
+  const { convertSatsToFiat, convertFiatToSats, fiatCurrency } = useFiatConversion();
   
   const handleConfigChange = (key: keyof ScrollPaymentConfig, value: string | boolean | number) => {
     setConfig(prev => ({
@@ -97,6 +101,10 @@ const ScrollPayment: React.FC = () => {
     }
   };
   
+  const handleSatsChange = (sats: number) => {
+    setAmount(sats.toString());
+  };
+  
   useEffect(() => {
     const handleScroll = () => {
       if (!config.enabled || isLoading || paymentCount >= config.maxPayments) {
@@ -135,13 +143,16 @@ const ScrollPayment: React.FC = () => {
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
-            label="Amount per Scroll (sats)"
+            label="Amount (sats)"
             type="number"
             placeholder="10"
-            value={config.amountPerScroll.toString()}
-            onChange={(e) => handleConfigChange('amountPerScroll', parseInt(e.target.value) || 1)}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
             disabled={config.enabled}
             fullWidth
+            isSatsInput={true}
+            onSatsChange={handleSatsChange}
+            showFiatConversion={true}
           />
           
           <Input
